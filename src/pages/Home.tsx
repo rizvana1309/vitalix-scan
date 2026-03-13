@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Camera, Heart, Footprints, Droplets, LayoutDashboard } from 'lucide-react';
+import { Camera, Heart, Footprints, Droplets, LayoutDashboard, MessageCircle } from 'lucide-react';
 import { FeatureCard } from '@/components/FeatureCard';
 import { useUser } from '@/contexts/UserContext';
 
@@ -35,6 +35,14 @@ const features = [
     to: '/water',
     iconBgColor: 'bg-water/10',
     iconColor: 'text-water',
+  },
+  {
+    icon: MessageCircle,
+    title: 'Health Chatbot',
+    subtitle: 'Ask AI about your health',
+    to: '/health-chat',
+    iconBgColor: 'bg-accent/50',
+    iconColor: 'text-primary',
   },
   {
     icon: LayoutDashboard,

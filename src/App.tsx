@@ -16,6 +16,7 @@ import HeartRate from "./pages/HeartRate";
 import Steps from "./pages/Steps";
 import Water from "./pages/Water";
 import Dashboard from "./pages/Dashboard";
+import HealthChat from "./pages/HealthChat";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ function AppRoutes() {
       <Route path="/steps" element={<ProtectedRoute><Steps /></ProtectedRoute>} />
       <Route path="/water" element={<ProtectedRoute><Water /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/health-chat" element={<ProtectedRoute><HealthChat /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
