@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Camera, Heart, Footprints, Droplets, LayoutDashboard } from 'lucide-react';
+import { Camera, Heart, Footprints, Droplets, LayoutDashboard, MessageCircle } from 'lucide-react';
 import { FeatureCard } from '@/components/FeatureCard';
 import { useUser } from '@/contexts/UserContext';
 
