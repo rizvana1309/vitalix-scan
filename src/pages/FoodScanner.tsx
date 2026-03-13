@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Upload, CheckCircle, AlertTriangle, XCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Camera, Images, CheckCircle, AlertTriangle, XCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
 import { useUser } from '@/contexts/UserContext';
@@ -22,7 +22,8 @@ interface FoodResult {
 const ANALYZE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-food`;
 
 export default function FoodScanner() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<FoodResult | null>(null);
@@ -141,25 +142,37 @@ export default function FoodScanner() {
           </div>
         </motion.div>
 
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
+        {/* Hidden file inputs */}
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"
+          onChange={handleImageUpload} className="hidden" />
+        <input ref={galleryInputRef} type="file" accept="image/*"
           onChange={handleImageUpload} className="hidden" />
 
         <AnimatePresence mode="wait">
           {!selectedImage ? (
             <motion.div key="scanner" initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
-              <div onClick={() => fileInputRef.current?.click()}
-                className="bg-card rounded-3xl border-2 border-dashed border-border aspect-square flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-all">
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <Camera className="w-10 h-10 text-primary" />
+              animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="space-y-4">
+              
+              {/* Camera Option */}
+              <div onClick={() => cameraInputRef.current?.click()}
+                className="bg-card rounded-2xl border-2 border-dashed border-primary/50 p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                  <Camera className="w-8 h-8 text-primary" />
                 </div>
-                <p className="text-lg font-medium text-foreground mb-1">Tap to Scan Food</p>
-                <p className="text-sm text-muted-foreground">Take a photo or upload image</p>
+                <p className="text-lg font-semibold text-foreground">Scan using Camera</p>
+                <p className="text-sm text-muted-foreground mt-1">Take a photo of your food</p>
               </div>
-              <Button onClick={() => fileInputRef.current?.click()} variant="outline" size="lg"
-                className="w-full h-14 rounded-2xl mt-4">
-                <Upload className="w-5 h-5 mr-2" /> Upload from Gallery
-              </Button>
+
+              {/* Gallery Option */}
+              <div onClick={() => galleryInputRef.current?.click()}
+                className="bg-card rounded-2xl border-2 border-dashed border-border p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-all">
+                <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-3">
+                  <Images className="w-8 h-8 text-secondary-foreground" />
+                </div>
+                <p className="text-lg font-semibold text-foreground">Upload from Gallery</p>
+                <p className="text-sm text-muted-foreground mt-1">Select an existing photo</p>
+              </div>
             </motion.div>
           ) : (
             <motion.div key="result" initial={{ opacity: 0, scale: 0.95 }}
