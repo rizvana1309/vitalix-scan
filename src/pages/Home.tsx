@@ -37,6 +37,14 @@ const features = [
     iconColor: 'text-water',
   },
   {
+    icon: MessageCircle,
+    title: 'Health Chatbot',
+    subtitle: 'Ask AI about your health',
+    to: '/health-chat',
+    iconBgColor: 'bg-accent/50',
+    iconColor: 'text-primary',
+  },
+  {
     icon: LayoutDashboard,
     title: 'Health Summary',
     subtitle: 'View your complete health dashboard',

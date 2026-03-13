@@ -1,1 +1,7 @@
 project_id = "kpfcqcbdwezxrzvthebm"
+
+[functions.analyze-food]
+verify_jwt = false
+
+[functions.health-chat]
+verify_jwt = false
