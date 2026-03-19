@@ -1,244 +1,213 @@
-import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Loader2, Camera } from 'lucide-react';
+import { Heart, Camera, Zap, ZapOff, Activity, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
+import { HeartRateWaveform } from '@/components/HeartRateWaveform';
+import { useHeartRateDetection } from '@/hooks/useHeartRateDetection';
 import { useUser } from '@/contexts/UserContext';
+import { useEffect } from 'react';
+
+const STATUS_MESSAGES: Record<string, { text: string; sub: string }> = {
+  idle: { text: 'Ready to Measure', sub: 'Place your finger gently on the camera lens' },
+  starting: { text: 'Starting Camera...', sub: 'Please wait' },
+  detecting: { text: 'Detecting...', sub: 'Keep your finger steady on the lens' },
+  stable: { text: 'Stable Reading', sub: 'Heart rate detected successfully' },
+  'low-signal': { text: 'Low Signal', sub: 'Increase pressure slightly on the lens' },
+  'no-finger': { text: 'No Finger Detected', sub: 'Place your finger over the camera lens' },
+  error: { text: 'Camera Error', sub: 'Could not access camera. Check permissions.' },
+};
 
 export default function HeartRate() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isMeasuring, setIsMeasuring] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ bpm: number; status: string } | null>(null);
-  const [cameraError, setCameraError] = useState(false);
+  const {
+    videoRef, canvasRef, status, bpm, signalData,
+    flashEnabled, flashSupported, readings, averageBpm,
+    startDetection, stopDetection, classifyBpm,
+  } = useHeartRateDetection();
   const { setHealthData } = useUser();
 
-  const startMeasurement = async () => {
-    setCameraError(false);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      
-      setIsMeasuring(true);
-      setProgress(0);
-      setResult(null);
+  const isActive = status !== 'idle' && status !== 'error';
+  const classification = bpm ? classifyBpm(bpm) : null;
 
-      // Simulate measurement progress
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            completeMeasurement(stream);
-            return 100;
-          }
-          return prev + 2;
-        });
-      }, 100);
+  const statusColor =
+    status === 'stable' ? 'hsl(var(--success))' :
+    status === 'detecting' ? 'hsl(var(--warning))' :
+    status === 'no-finger' || status === 'low-signal' || status === 'error' ? 'hsl(var(--destructive))' :
+    'hsl(var(--heart))';
 
-    } catch (error) {
-      setCameraError(true);
-      // Simulate measurement without camera
-      setIsMeasuring(true);
-      setProgress(0);
-      
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            completeMeasurement(null);
-            return 100;
-          }
-          return prev + 2;
-        });
-      }, 100);
+  // Save to health data when we get a stable reading
+  useEffect(() => {
+    if (status === 'stable' && bpm) {
+      setHealthData(prev => ({
+        ...prev,
+        heartRate: bpm,
+        lastHeartRateTime: new Date(),
+      }));
     }
-  };
-
-  const completeMeasurement = (stream: MediaStream | null) => {
-    // Stop camera
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
-    
-    // Generate realistic heart rate (60-100 bpm for normal adult)
-    const bpm = Math.floor(Math.random() * 40) + 60;
-    let status = 'Normal';
-    
-    if (bpm < 60) status = 'Low';
-    else if (bpm > 100) status = 'High';
-    
-    setResult({ bpm, status });
-    setIsMeasuring(false);
-    
-    // Save to health data
-    setHealthData(prev => ({
-      ...prev,
-      heartRate: bpm,
-      lastHeartRateTime: new Date(),
-    }));
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Normal':
-        return 'text-success';
-      case 'High':
-        return 'text-destructive';
-      case 'Low':
-        return 'text-warning';
-      default:
-        return 'text-foreground';
-    }
-  };
+  }, [status, bpm, setHealthData]);
 
   return (
     <div className="min-h-screen bg-background p-6 pb-24">
       <div className="max-w-md mx-auto pt-4">
-        <PageHeader title="Heart Rate" subtitle="Measure using your camera" />
+        <PageHeader title="Heart Rate" subtitle="Real-time PPG measurement" />
 
-        <AnimatePresence mode="wait">
-          {!isMeasuring && !result ? (
-            <motion.div
-              key="start"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="text-center"
-            >
-              <div className="bg-card rounded-3xl border border-border/50 aspect-square flex flex-col items-center justify-center mb-6">
+        {/* Hidden canvas for frame processing */}
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* Camera Preview / Heart Icon */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-card rounded-3xl border border-border/50 aspect-[4/3] flex items-center justify-center overflow-hidden relative mb-4"
+        >
+          {isActive ? (
+            <>
+              <video
+                ref={videoRef}
+                className="absolute inset-0 w-full h-full object-cover"
+                playsInline
+                muted
+              />
+              <div className="absolute inset-0 bg-background/40" />
+              <div className="relative z-10 text-center">
                 <motion.div
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{ repeat: Infinity, duration: 1.5 }}
-                  className="w-32 h-32 rounded-full bg-heart/10 flex items-center justify-center mb-6"
+                  animate={{ scale: [1, 1.15, 1] }}
+                  transition={{ repeat: Infinity, duration: bpm ? 60 / bpm : 0.8 }}
+                  className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-3"
+                  style={{ backgroundColor: `${statusColor}20` }}
                 >
-                  <Heart className="w-16 h-16 text-heart" />
+                  <Heart className="w-10 h-10" style={{ color: statusColor }} fill="currentColor" />
                 </motion.div>
-                
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Ready to Measure
-                </h3>
-                <p className="text-muted-foreground text-center px-8">
-                  Place your finger gently on the camera lens
-                </p>
-              </div>
-
-              <Button
-                onClick={startMeasurement}
-                size="lg"
-                className="w-full h-14 text-lg rounded-2xl bg-heart hover:bg-heart/90 text-heart-foreground"
-              >
-                <Camera className="w-5 h-5 mr-2" />
-                Start Measurement
-              </Button>
-            </motion.div>
-          ) : isMeasuring ? (
-            <motion.div
-              key="measuring"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="text-center"
-            >
-              <div className="bg-card rounded-3xl border border-border/50 aspect-square flex flex-col items-center justify-center overflow-hidden relative mb-6">
-                {!cameraError && (
-                  <video
-                    ref={videoRef}
-                    className="absolute inset-0 w-full h-full object-cover opacity-30"
-                    playsInline
-                    muted
-                  />
+                {bpm && (
+                  <div className="text-5xl font-bold text-foreground">{bpm} <span className="text-lg text-muted-foreground">BPM</span></div>
                 )}
-                
-                <div className="relative z-10">
-                  <motion.div
-                    animate={{ scale: [1, 1.2, 1] }}
-                    transition={{ repeat: Infinity, duration: 0.8 }}
-                    className="w-32 h-32 rounded-full bg-heart/20 flex items-center justify-center mb-4"
-                  >
-                    <Heart className="w-16 h-16 text-heart" fill="currentColor" />
-                  </motion.div>
-                  
-                  <div className="text-3xl font-bold text-foreground mb-2">
-                    Measuring...
-                  </div>
-                  
-                  <div className="w-48 h-2 bg-muted rounded-full mx-auto overflow-hidden">
-                    <motion.div
-                      className="h-full bg-heart rounded-full"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  
-                  <p className="text-muted-foreground mt-4">
-                    Keep your finger steady
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          ) : result && (
-            <motion.div
-              key="result"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-            >
-              <div className="bg-card rounded-3xl border border-border/50 p-8 text-center mb-6">
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 200 }}
-                  className="w-32 h-32 rounded-full bg-heart/10 flex items-center justify-center mx-auto mb-6"
-                >
-                  <Heart className="w-16 h-16 text-heart" />
-                </motion.div>
-                
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  <div className="text-6xl font-bold text-foreground mb-2">
-                    {result.bpm}
-                  </div>
-                  <div className="text-xl text-muted-foreground mb-4">BPM</div>
-                  
-                  <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${
-                    result.status === 'Normal' ? 'bg-success/10' :
-                    result.status === 'High' ? 'bg-destructive/10' : 'bg-warning/10'
-                  }`}>
-                    <span className={`font-semibold ${getStatusColor(result.status)}`}>
-                      {result.status === 'Normal' && '✓'} {result.status}
-                    </span>
-                  </div>
-                  
-                  <p className="text-muted-foreground mt-6">
-                    {result.status === 'Normal' 
-                      ? 'Your heart rate is within the healthy range.'
-                      : result.status === 'High'
-                      ? 'Consider relaxing or consulting a doctor if persistent.'
-                      : 'Low heart rate detected. Consult a doctor if you feel unwell.'}
-                  </p>
-                </motion.div>
               </div>
 
-              <Button
-                onClick={() => setResult(null)}
-                variant="outline"
-                size="lg"
-                className="w-full h-14 text-lg rounded-2xl"
+              {/* Status indicator dot */}
+              <div className="absolute top-4 right-4 flex items-center gap-2">
+                <motion.div
+                  animate={{ opacity: [1, 0.3, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.2 }}
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: statusColor }}
+                />
+                <span className="text-xs text-foreground/80 font-medium">
+                  {status === 'stable' ? 'LIVE' : 'READING'}
+                </span>
+              </div>
+
+              {/* Flash indicator */}
+              <div className="absolute top-4 left-4">
+                {flashEnabled ? (
+                  <Zap className="w-5 h-5 text-warning" />
+                ) : !flashSupported ? (
+                  <div className="flex items-center gap-1">
+                    <ZapOff className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground">Low light</span>
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div className="text-center">
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="w-28 h-28 rounded-full bg-heart/10 flex items-center justify-center mx-auto mb-4"
               >
-                Measure Again
-              </Button>
-            </motion.div>
+                <Heart className="w-14 h-14 text-heart" />
+              </motion.div>
+              <h3 className="text-lg font-semibold text-foreground">{STATUS_MESSAGES[status].text}</h3>
+              <p className="text-sm text-muted-foreground mt-1 px-8">{STATUS_MESSAGES[status].sub}</p>
+            </div>
           )}
-        </AnimatePresence>
+        </motion.div>
+
+        {/* Status Message (when active) */}
+        {isActive && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-4"
+            style={{ backgroundColor: `${statusColor}15` }}
+          >
+            <Activity className="w-5 h-5 flex-shrink-0" style={{ color: statusColor }} />
+            <div>
+              <p className="text-sm font-medium text-foreground">{STATUS_MESSAGES[status].text}</p>
+              <p className="text-xs text-muted-foreground">{STATUS_MESSAGES[status].sub}</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Waveform Graph */}
+        {isActive && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
+            <HeartRateWaveform data={signalData} statusColor={statusColor} />
+          </motion.div>
+        )}
+
+        {/* Classification badge */}
+        {bpm && classification && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex justify-center mb-4"
+          >
+            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full bg-${classification.color}/10`}>
+              <span className={`w-2 h-2 rounded-full bg-${classification.color}`} />
+              <span className={`font-semibold text-sm text-${classification.color}`}>{classification.label} ({bpm} BPM)</span>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Start/Stop Button */}
+        <Button
+          onClick={isActive ? stopDetection : startDetection}
+          size="lg"
+          className={`w-full h-14 text-lg rounded-2xl ${
+            isActive
+              ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground'
+              : 'bg-heart hover:bg-heart/90 text-heart-foreground'
+          }`}
+        >
+          {isActive ? (
+            <>Stop Measurement</>
+          ) : (
+            <><Camera className="w-5 h-5 mr-2" />Start Measurement</>
+          )}
+        </Button>
+
+        {/* Past Readings */}
+        {readings.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-6 bg-card rounded-2xl border border-border/50 p-5"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-foreground">Recent Readings</h3>
+              {averageBpm && (
+                <span className="text-sm text-muted-foreground">Avg: <span className="font-semibold text-foreground">{averageBpm} BPM</span></span>
+              )}
+            </div>
+            <div className="space-y-3">
+              {[...readings].reverse().map((reading, i) => {
+                const cls = classifyBpm(reading.bpm);
+                return (
+                  <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                    <div className="flex items-center gap-3">
+                      <Clock className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">{reading.timestamp.toLocaleTimeString()}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground">{reading.bpm}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full bg-${cls.color}/10 text-${cls.color}`}>{cls.label}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   );
