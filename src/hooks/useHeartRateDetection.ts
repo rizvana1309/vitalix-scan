@@ -221,6 +221,7 @@ export function useHeartRateDetection() {
 
             if (calculatedBpm >= 40 && calculatedBpm <= 200) {
               setBpm(calculatedBpm);
+              bpmHistoryRef.current.push(calculatedBpm);
               stableCountRef.current++;
               setStatus(stableCountRef.current >= 3 ? 'stable' : 'detecting');
             } else {
