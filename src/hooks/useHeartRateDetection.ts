@@ -354,34 +354,28 @@ export function useHeartRateDetection() {
   }, [processFrame, finalizeMeasurement]);
 
   const stopDetection = useCallback(() => {
-    cancelAnimationFrame(animFrameRef.current);
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
+    if (autoStopTimerRef.current) {
+      clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
     }
+    finalizeMeasurement();
+  }, [finalizeMeasurement]);
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    // Save reading if we got a stable BPM
-    if (bpm && stableCountRef.current >= 2) {
-      setReadings(prev => {
-        const updated = [...prev, { bpm, timestamp: new Date() }];
-        return updated.slice(-5); // keep last 5
-      });
-    }
-
-    setStatus('idle');
-    setFlashEnabled(false);
-  }, [bpm]);
+  const resetMeasurement = useCallback(() => {
+    setMeasurementComplete(false);
+    setFinalBpm(null);
+    setProgress(0);
+    setBpm(null);
+    setSignalData([]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       cancelAnimationFrame(animFrameRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
+      if (autoStopTimerRef.current) clearTimeout(autoStopTimerRef.current);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     };
   }, []);
 
