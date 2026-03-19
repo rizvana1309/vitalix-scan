@@ -91,12 +91,18 @@ export function useHeartRateDetection() {
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [flashSupported, setFlashSupported] = useState(true);
   const [readings, setReadings] = useState<HeartRateReading[]>([]);
+  const [measurementComplete, setMeasurementComplete] = useState(false);
+  const [finalBpm, setFinalBpm] = useState<number | null>(null);
+  const [progress, setProgress] = useState(0);
 
   const rawSignalRef = useRef<{ value: number; time: number }[]>([]);
   const fpsRef = useRef(30);
   const lastBpmUpdateRef = useRef(0);
   const startTimeRef = useRef(0);
   const stableCountRef = useRef(0);
+  const bpmHistoryRef = useRef<number[]>([]);
+  const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const processFrame = useCallback(() => {
     const video = videoRef.current;
