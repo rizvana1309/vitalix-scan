@@ -240,12 +240,59 @@ export function useHeartRateDetection() {
     animFrameRef.current = requestAnimationFrame(processFrame);
   }, []);
 
+  const finalizeMeasurement = useCallback(() => {
+    cancelAnimationFrame(animFrameRef.current);
+
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    // Calculate final BPM from history
+    const history = bpmHistoryRef.current;
+    if (history.length >= 2) {
+      // Remove outliers and average
+      const mean = history.reduce((a, b) => a + b, 0) / history.length;
+      const std = Math.sqrt(history.reduce((a, b) => a + (b - mean) ** 2, 0) / history.length);
+      const valid = history.filter(v => Math.abs(v - mean) < 2 * std);
+      const result = valid.length > 0
+        ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length)
+        : Math.round(mean);
+
+      setFinalBpm(result);
+      setBpm(result);
+
+      setReadings(prev => {
+        const updated = [...prev, { bpm: result, timestamp: new Date() }];
+        return updated.slice(-5);
+      });
+    }
+
+    setMeasurementComplete(true);
+    setProgress(100);
+    setStatus('idle');
+    setFlashEnabled(false);
+  }, []);
+
   const startDetection = useCallback(async () => {
     setStatus('starting');
     setBpm(null);
     setSignalData([]);
+    setMeasurementComplete(false);
+    setFinalBpm(null);
+    setProgress(0);
     rawSignalRef.current = [];
     stableCountRef.current = 0;
+    bpmHistoryRef.current = [];
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -286,11 +333,25 @@ export function useHeartRateDetection() {
       lastBpmUpdateRef.current = 0;
       setStatus('detecting');
       animFrameRef.current = requestAnimationFrame(processFrame);
+
+      // Progress timer
+      const startTime = Date.now();
+      progressIntervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const pct = Math.min((elapsed / AUTO_STOP_DURATION) * 100, 100);
+        setProgress(Math.round(pct));
+      }, 500);
+
+      // Auto-stop after duration
+      autoStopTimerRef.current = setTimeout(() => {
+        finalizeMeasurement();
+      }, AUTO_STOP_DURATION);
+
     } catch (err) {
       console.error('Camera access failed:', err);
       setStatus('error');
     }
-  }, [processFrame]);
+  }, [processFrame, finalizeMeasurement]);
 
   const stopDetection = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current);
