@@ -399,8 +399,12 @@ export function useHeartRateDetection() {
     flashSupported,
     readings,
     averageBpm,
+    measurementComplete,
+    finalBpm,
+    progress,
     startDetection,
     stopDetection,
+    resetMeasurement,
     classifyBpm,
   };
 }
