@@ -57,52 +57,75 @@ export default function HeartRate() {
 
         {/* Measurement Complete Result */}
         <AnimatePresence>
-          {measurementComplete && finalBpm && (
+          {measurementComplete && (
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               className="bg-card rounded-3xl border border-border/50 p-8 mb-4 text-center"
             >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: 'spring', delay: 0.2 }}
-                className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4"
-              >
-                <CheckCircle2 className="w-10 h-10 text-success" />
-              </motion.div>
+              {finalBpm ? (
+                <>
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: 'spring', delay: 0.2 }}
+                    className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4"
+                  >
+                    <CheckCircle2 className="w-10 h-10 text-success" />
+                  </motion.div>
 
-              <p className="text-sm text-muted-foreground mb-2">Measurement Complete</p>
+                  <p className="text-sm text-muted-foreground mb-2">Measurement Complete</p>
 
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-              >
-                <div className="text-6xl font-bold text-foreground mb-1">{finalBpm}</div>
-                <div className="text-lg text-muted-foreground mb-4">BPM</div>
-              </motion.div>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    <div className="text-6xl font-bold text-foreground mb-1">{finalBpm}</div>
+                    <div className="text-lg text-muted-foreground mb-4">BPM</div>
+                  </motion.div>
 
-              {classification && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6 }}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-full bg-${classification.color}/10 mb-6`}
-                >
-                  <span className={`w-2 h-2 rounded-full bg-${classification.color}`} />
-                  <span className={`font-semibold text-sm text-${classification.color}`}>
-                    {classification.label} Heart Rate
-                  </span>
-                </motion.div>
+                  {classification && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.6 }}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6 ${
+                        classification.color === 'success' ? 'bg-success/10' :
+                        classification.color === 'warning' ? 'bg-warning/10' : 'bg-destructive/10'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        classification.color === 'success' ? 'bg-success' :
+                        classification.color === 'warning' ? 'bg-warning' : 'bg-destructive'
+                      }`} />
+                      <span className={`font-semibold text-sm ${
+                        classification.color === 'success' ? 'text-success' :
+                        classification.color === 'warning' ? 'text-warning' : 'text-destructive'
+                      }`}>
+                        {classification.label} Heart Rate
+                      </span>
+                    </motion.div>
+                  )}
+
+                  <div className="text-xs text-muted-foreground mb-6">
+                    {finalBpm < 60 && 'Your heart rate is below the normal resting range. This could indicate excellent fitness or may need medical attention if you feel unwell.'}
+                    {finalBpm >= 60 && finalBpm <= 100 && 'Your heart rate is within the normal resting range. This indicates a healthy cardiovascular state.'}
+                    {finalBpm > 100 && 'Your heart rate is above the normal resting range. This could be due to activity, stress, or caffeine. Consult a doctor if persistent.'}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                    <Heart className="w-10 h-10 text-destructive" />
+                  </div>
+                  <p className="text-lg font-semibold text-foreground mb-2">Could Not Detect Heart Rate</p>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Please ensure your finger fully covers the camera lens with gentle pressure. Try again in a well-lit area or with the flash enabled.
+                  </p>
+                </>
               )}
-
-              <div className="text-xs text-muted-foreground mb-6">
-                {finalBpm < 60 && 'Your heart rate is below the normal resting range. This could indicate excellent fitness or may need medical attention if you feel unwell.'}
-                {finalBpm >= 60 && finalBpm <= 100 && 'Your heart rate is within the normal resting range. This indicates a healthy cardiovascular state.'}
-                {finalBpm > 100 && 'Your heart rate is above the normal resting range. This could be due to activity, stress, or caffeine. Consult a doctor if persistent.'}
-              </div>
 
               <Button
                 onClick={resetMeasurement}
@@ -110,7 +133,7 @@ export default function HeartRate() {
                 className="w-full h-14 text-lg rounded-2xl bg-heart hover:bg-heart/90 text-heart-foreground"
               >
                 <RotateCcw className="w-5 h-5 mr-2" />
-                Measure Again
+                {finalBpm ? 'Measure Again' : 'Try Again'}
               </Button>
             </motion.div>
           )}
