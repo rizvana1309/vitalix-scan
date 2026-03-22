@@ -259,29 +259,43 @@ export function useHeartRateDetection() {
 
     // Calculate final BPM from history
     const history = bpmHistoryRef.current;
+    let result: number | null = null;
+
     if (history.length >= 2) {
       // Remove outliers and average
       const mean = history.reduce((a, b) => a + b, 0) / history.length;
       const std = Math.sqrt(history.reduce((a, b) => a + (b - mean) ** 2, 0) / history.length);
       const valid = history.filter(v => Math.abs(v - mean) < 2 * std);
-      const result = valid.length > 0
+      result = valid.length > 0
         ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length)
         : Math.round(mean);
+    } else if (history.length === 1) {
+      // Even a single reading is better than nothing
+      result = history[0];
+    } else if (bpm) {
+      // Fallback: use whatever the last live BPM was
+      result = bpm;
+    }
 
+    if (result && result >= 40 && result <= 200) {
       setFinalBpm(result);
       setBpm(result);
 
       setReadings(prev => {
-        const updated = [...prev, { bpm: result, timestamp: new Date() }];
+        const updated = [...prev, { bpm: result!, timestamp: new Date() }];
         return updated.slice(-5);
       });
+      setMeasurementComplete(true);
+    } else {
+      // No valid result — let user know
+      setFinalBpm(null);
+      setMeasurementComplete(true);
     }
 
-    setMeasurementComplete(true);
     setProgress(100);
     setStatus('idle');
     setFlashEnabled(false);
-  }, []);
+  }, [bpm]);
 
   const startDetection = useCallback(async () => {
     setStatus('starting');
