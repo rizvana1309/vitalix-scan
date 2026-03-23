@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, Camera, Zap, ZapOff, Activity, Clock, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Heart, Camera, Zap, ZapOff, Activity, Clock, RotateCcw, CheckCircle2, Signal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
 import { HeartRateWaveform } from '@/components/HeartRateWaveform';
@@ -11,10 +11,11 @@ import { useEffect } from 'react';
 const STATUS_MESSAGES: Record<string, { text: string; sub: string }> = {
   idle: { text: 'Ready to Measure', sub: 'Place your finger gently on the camera lens' },
   starting: { text: 'Starting Camera...', sub: 'Please wait' },
-  detecting: { text: 'Detecting...', sub: 'Keep your finger steady on the lens' },
+  detecting: { text: 'Detecting Pulse...', sub: 'Keep your finger steady on the lens' },
   stable: { text: 'Stable Reading', sub: 'Heart rate detected successfully' },
-  'low-signal': { text: 'Low Signal', sub: 'Increase pressure slightly on the lens' },
-  'no-finger': { text: 'No Finger Detected', sub: 'Place your finger over the camera lens' },
+  adjusting: { text: 'Adjust Your Finger', sub: 'Press slightly harder and hold still' },
+  'hold-steady': { text: 'Hold Steady', sub: 'Keep your finger firmly on the lens' },
+  'no-finger': { text: 'Place Finger on Camera', sub: 'Cover the camera lens completely with your fingertip' },
   error: { text: 'Camera Error', sub: 'Could not access camera. Check permissions.' },
 };
 
@@ -22,7 +23,7 @@ export default function HeartRate() {
   const {
     videoRef, canvasRef, status, bpm, signalData,
     flashEnabled, flashSupported, readings, averageBpm,
-    measurementComplete, finalBpm, progress,
+    measurementComplete, finalBpm, progress, signalQuality,
     startDetection, stopDetection, resetMeasurement, classifyBpm,
   } = useHeartRateDetection();
   const { setHealthData } = useUser();
@@ -33,10 +34,9 @@ export default function HeartRate() {
   const statusColor =
     status === 'stable' ? 'hsl(var(--success))' :
     status === 'detecting' ? 'hsl(var(--warning))' :
-    status === 'no-finger' || status === 'low-signal' || status === 'error' ? 'hsl(var(--destructive))' :
+    status === 'no-finger' || status === 'adjusting' || status === 'hold-steady' || status === 'error' ? 'hsl(var(--destructive))' :
     'hsl(var(--heart))';
 
-  // Save to health data when measurement completes
   useEffect(() => {
     if (measurementComplete && finalBpm) {
       setHealthData(prev => ({
@@ -52,7 +52,6 @@ export default function HeartRate() {
       <div className="max-w-md mx-auto pt-4">
         <PageHeader title="Heart Rate" subtitle="Real-time PPG measurement" />
 
-        {/* Hidden canvas for frame processing */}
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Measurement Complete Result */}
@@ -122,7 +121,7 @@ export default function HeartRate() {
                   </div>
                   <p className="text-lg font-semibold text-foreground mb-2">Could Not Detect Heart Rate</p>
                   <p className="text-sm text-muted-foreground mb-6">
-                    Please ensure your finger fully covers the camera lens with gentle pressure. Try again in a well-lit area or with the flash enabled.
+                    Ensure your finger fully covers the camera lens with gentle pressure. Try in a well-lit area or with the flash enabled.
                   </p>
                 </>
               )}
@@ -139,7 +138,7 @@ export default function HeartRate() {
           )}
         </AnimatePresence>
 
-        {/* Camera Preview / Heart Icon (hidden when complete) */}
+        {/* Camera Preview / Heart Icon */}
         {!measurementComplete && (
           <>
             <motion.div
@@ -170,7 +169,7 @@ export default function HeartRate() {
                     )}
                   </div>
 
-                  {/* Status indicator dot */}
+                  {/* Status dot */}
                   <div className="absolute top-4 right-4 flex items-center gap-2">
                     <motion.div
                       animate={{ opacity: [1, 0.3, 1] }}
@@ -190,7 +189,7 @@ export default function HeartRate() {
                     ) : !flashSupported ? (
                       <div className="flex items-center gap-1">
                         <ZapOff className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-[10px] text-muted-foreground">Low light</span>
+                        <span className="text-[10px] text-muted-foreground">No flash</span>
                       </div>
                     ) : null}
                   </div>
@@ -204,31 +203,41 @@ export default function HeartRate() {
                   >
                     <Heart className="w-14 h-14 text-heart" />
                   </motion.div>
-                  <h3 className="text-lg font-semibold text-foreground">{STATUS_MESSAGES[status].text}</h3>
-                  <p className="text-sm text-muted-foreground mt-1 px-8">{STATUS_MESSAGES[status].sub}</p>
+                  <h3 className="text-lg font-semibold text-foreground">{STATUS_MESSAGES[status]?.text}</h3>
+                  <p className="text-sm text-muted-foreground mt-1 px-8">{STATUS_MESSAGES[status]?.sub}</p>
                 </div>
               )}
             </motion.div>
 
-            {/* Progress bar during measurement */}
+            {/* Progress bar + signal quality */}
             {isActive && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="mb-4"
-              >
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-muted-foreground">Measuring...</span>
                   <span className="text-xs font-medium text-foreground">{progress}%</span>
                 </div>
                 <Progress value={progress} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1 text-center">
-                  Auto-completes in {Math.max(0, Math.ceil((100 - progress) * 0.3))}s
-                </p>
+
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-1.5">
+                    <Signal className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      Signal: <span className={`font-medium ${
+                        signalQuality >= 50 ? 'text-success' :
+                        signalQuality >= 25 ? 'text-warning' : 'text-destructive'
+                      }`}>
+                        {signalQuality >= 50 ? 'Good' : signalQuality >= 25 ? 'Weak' : 'Low'}
+                      </span>
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {Math.max(0, Math.ceil((100 - progress) * 0.45))}s remaining
+                  </span>
+                </div>
               </motion.div>
             )}
 
-            {/* Status Message (when active) */}
+            {/* Status Message */}
             {isActive && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -238,20 +247,20 @@ export default function HeartRate() {
               >
                 <Activity className="w-5 h-5 flex-shrink-0" style={{ color: statusColor }} />
                 <div>
-                  <p className="text-sm font-medium text-foreground">{STATUS_MESSAGES[status].text}</p>
-                  <p className="text-xs text-muted-foreground">{STATUS_MESSAGES[status].sub}</p>
+                  <p className="text-sm font-medium text-foreground">{STATUS_MESSAGES[status]?.text}</p>
+                  <p className="text-xs text-muted-foreground">{STATUS_MESSAGES[status]?.sub}</p>
                 </div>
               </motion.div>
             )}
 
-            {/* Waveform Graph */}
+            {/* Waveform */}
             {isActive && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
                 <HeartRateWaveform data={signalData} statusColor={statusColor} />
               </motion.div>
             )}
 
-            {/* Start/Stop Button */}
+            {/* Start/Stop */}
             <Button
               onClick={isActive ? stopDetection : startDetection}
               size="lg"
