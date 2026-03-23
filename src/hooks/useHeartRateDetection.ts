@@ -271,7 +271,7 @@ export function useHeartRateDetection() {
       try {
         const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
         if (capabilities?.torch) {
-          await track.applyConstraints({ advanced: [{ torch: true }] as MediaTrackConstraintSet[] });
+          await track.applyConstraints({ advanced: [{ torch: true } as any] });
           setFlashEnabled(true);
           setFlashSupported(true);
         } else {
