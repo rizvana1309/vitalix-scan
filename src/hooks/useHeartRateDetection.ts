@@ -1,4 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  analyzeHeartSignal,
+  calculateFinalBpm,
+  type HeartSignalSample,
+} from '@/lib/heartRateSignal';
 
 export interface SignalPoint {
   time: number;
@@ -13,70 +18,16 @@ export interface HeartRateReading {
 
 export type DetectionStatus = 'idle' | 'starting' | 'detecting' | 'stable' | 'low-signal' | 'no-finger' | 'error';
 
-const SAMPLE_BUFFER_SIZE = 300; // ~10 seconds at 30fps
-const BPM_UPDATE_INTERVAL = 2000; // update BPM every 2s
-const AUTO_STOP_DURATION = 45000; // auto-stop after 45 seconds for better accuracy
-const MIN_STABLE_READINGS = 3; // need 3 stable readings before auto-stop
-const MIN_RED_THRESHOLD = 50; // minimum red channel avg to detect finger
-const FINGER_COVERAGE_THRESHOLD = 0.6; // 60% of pixels must be reddish
-const SMOOTHING_WINDOW = 5;
-const BANDPASS_LOW = 0.8; // Hz (48 BPM)
-const BANDPASS_HIGH = 3.0; // Hz (180 BPM)
-const MIN_PEAKS_FOR_BPM = 3;
-
-function movingAverage(data: number[], window: number): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < data.length; i++) {
-    const start = Math.max(0, i - Math.floor(window / 2));
-    const end = Math.min(data.length, i + Math.ceil(window / 2));
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += data[j];
-    result.push(sum / (end - start));
-  }
-  return result;
-}
-
-function bandpassFilter(data: number[], fps: number, lowHz: number, highHz: number): number[] {
-  // Simple frequency domain bandpass using DFT on short windows
-  // For real-time, we use a cascaded single-pole IIR approximation
-  const dt = 1 / fps;
-  const rcLow = 1 / (2 * Math.PI * highHz);
-  const rcHigh = 1 / (2 * Math.PI * lowHz);
-  const alphaLow = dt / (rcLow + dt);
-  const alphaHigh = rcHigh / (rcHigh + dt);
-
-  // High-pass then low-pass
-  const highPassed: number[] = [data[0]];
-  for (let i = 1; i < data.length; i++) {
-    highPassed.push(alphaHigh * (highPassed[i - 1] + data[i] - data[i - 1]));
-  }
-
-  const lowPassed: number[] = [highPassed[0]];
-  for (let i = 1; i < highPassed.length; i++) {
-    lowPassed.push(lowPassed[i - 1] + alphaLow * (highPassed[i] - lowPassed[i - 1]));
-  }
-
-  return lowPassed;
-}
-
-function detectPeaks(data: number[], minDistance: number): number[] {
-  const peaks: number[] = [];
-  if (data.length < 3) return peaks;
-
-  // Adaptive threshold: mean + 0.3 * std
-  const mean = data.reduce((a, b) => a + b, 0) / data.length;
-  const std = Math.sqrt(data.reduce((a, b) => a + (b - mean) ** 2, 0) / data.length);
-  const threshold = mean + 0.3 * std;
-
-  for (let i = 1; i < data.length - 1; i++) {
-    if (data[i] > data[i - 1] && data[i] > data[i + 1] && data[i] > threshold) {
-      if (peaks.length === 0 || i - peaks[peaks.length - 1] >= minDistance) {
-        peaks.push(i);
-      }
-    }
-  }
-  return peaks;
-}
+const SAMPLE_BUFFER_SIZE = 450; // keep ~15s at 30fps for final fallback analysis
+const BPM_UPDATE_INTERVAL = 1500;
+const AUTO_STOP_DURATION = 45000;
+const MIN_STABLE_READINGS = 3;
+const MIN_SIGNAL_SECONDS = 8;
+const MIN_RED_THRESHOLD = 35;
+const MIN_RED_GREEN_RATIO = 1.08;
+const FINGER_COVERAGE_THRESHOLD = 0.32;
+const NO_FINGER_FRAME_THRESHOLD = 18;
+const STABLE_BPM_SPREAD = 6;
 
 export function useHeartRateDetection() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -103,6 +54,57 @@ export function useHeartRateDetection() {
   const bpmHistoryRef = useRef<number[]>([]);
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const noFingerFramesRef = useRef(0);
+  const wasNoFingerRef = useRef(false);
+
+  const stopMediaStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      trackRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const finalizeMeasurement = useCallback(() => {
+    cancelAnimationFrame(animFrameRef.current);
+
+    if (autoStopTimerRef.current) {
+      clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
+
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    stopMediaStream();
+
+    const elapsedSeconds = (performance.now() - startTimeRef.current) / 1000;
+    const result = calculateFinalBpm(
+      bpmHistoryRef.current,
+      bpm,
+      rawSignalRef.current,
+      fpsRef.current,
+    );
+
+    if (result && elapsedSeconds >= MIN_SIGNAL_SECONDS) {
+      setFinalBpm(result);
+      setBpm(result);
+      setReadings((prev) => [...prev, { bpm: result, timestamp: new Date() }].slice(-5));
+    } else {
+      setFinalBpm(null);
+    }
+
+    setMeasurementComplete(true);
+    setProgress(100);
+    setStatus('idle');
+    setFlashEnabled(false);
+  }, [bpm, stopMediaStream]);
 
   const processFrame = useCallback(() => {
     const video = videoRef.current;
@@ -138,164 +140,104 @@ export function useHeartRateDetection() {
       const b = pixels[i + 2];
       redSum += r;
       greenSum += g;
-      // Finger on camera produces high red, low green/blue
-      if (r > 80 && r > g * 1.2 && r > b * 1.2) {
+      if (r > 65 && r > g * 1.12 && r > b * 1.12) {
         fingerPixels++;
       }
     }
 
     const avgRed = redSum / totalPixels;
     const avgGreen = greenSum / totalPixels;
+    const redGreenRatio = avgRed / Math.max(avgGreen, 1);
     const fingerCoverage = fingerPixels / totalPixels;
     const now = performance.now();
     const elapsed = (now - startTimeRef.current) / 1000;
 
-    // Check if finger is on camera
-    if (avgRed < MIN_RED_THRESHOLD || fingerCoverage < FINGER_COVERAGE_THRESHOLD) {
-      if (elapsed > 2) {
+    const hasFinger =
+      avgRed >= MIN_RED_THRESHOLD &&
+      redGreenRatio >= MIN_RED_GREEN_RATIO &&
+      fingerCoverage >= FINGER_COVERAGE_THRESHOLD;
+
+    if (!hasFinger) {
+      noFingerFramesRef.current += 1;
+
+      if (elapsed > 2 && noFingerFramesRef.current >= NO_FINGER_FRAME_THRESHOLD && !wasNoFingerRef.current) {
         setStatus('no-finger');
         stableCountRef.current = 0;
+        wasNoFingerRef.current = true;
       }
+
       animFrameRef.current = requestAnimationFrame(processFrame);
       return;
     }
 
-    // Use red channel average as PPG signal (inverted for some cameras)
-    const signalValue = avgRed;
+    if (wasNoFingerRef.current) {
+      setStatus('detecting');
+      wasNoFingerRef.current = false;
+    }
+
+    noFingerFramesRef.current = 0;
+
+    // PPG-like signal: ratio is less sensitive to exposure changes than raw red channel.
+    const signalValue = redGreenRatio;
     const signal = rawSignalRef.current;
     signal.push({ value: signalValue, time: elapsed });
 
-    // Keep buffer size manageable
     if (signal.length > SAMPLE_BUFFER_SIZE) {
       signal.splice(0, signal.length - SAMPLE_BUFFER_SIZE);
     }
 
-    // Calculate FPS
-    if (signal.length > 10) {
-      const dt = signal[signal.length - 1].time - signal[signal.length - 11].time;
-      fpsRef.current = 10 / dt;
+    if (signal.length > 12) {
+      const dt = signal[signal.length - 1].time - signal[signal.length - 13].time;
+      if (dt > 0.1) {
+        const estimatedFps = 12 / dt;
+        fpsRef.current = Math.min(60, Math.max(15, estimatedFps));
+      }
     }
 
-    // Update BPM periodically
-    if (now - lastBpmUpdateRef.current > BPM_UPDATE_INTERVAL && signal.length > 60) {
+    if (now - lastBpmUpdateRef.current > BPM_UPDATE_INTERVAL && signal.length > 70) {
       lastBpmUpdateRef.current = now;
+      const analysis = analyzeHeartSignal(signal as HeartSignalSample[], fpsRef.current);
 
-      const values = signal.map(s => s.value);
-      const smoothed = movingAverage(values, SMOOTHING_WINDOW);
-      const filtered = bandpassFilter(smoothed, fpsRef.current, BANDPASS_LOW, BANDPASS_HIGH);
-
-      // Min peak distance: fps * 60/maxBPM
-      const minDist = Math.round(fpsRef.current * 60 / 180);
-      const peakIndices = detectPeaks(filtered, minDist);
-
-      // Build signal visualization data (last ~5 seconds)
-      const visStart = Math.max(0, filtered.length - Math.round(fpsRef.current * 5));
-      const peakSet = new Set(peakIndices.filter(p => p >= visStart));
+      const visStart = Math.max(0, analysis.filtered.length - Math.round(fpsRef.current * 5));
+      const peakSet = new Set(analysis.peakIndices.filter((peak) => peak >= visStart));
       const visData: SignalPoint[] = [];
-      for (let i = visStart; i < filtered.length; i++) {
+
+      for (let i = visStart; i < analysis.filtered.length; i++) {
         visData.push({
-          time: parseFloat((signal[i].time).toFixed(2)),
-          value: parseFloat(filtered[i].toFixed(2)),
+          time: parseFloat(signal[i].time.toFixed(2)),
+          value: parseFloat(analysis.filtered[i].toFixed(2)),
           isPeak: peakSet.has(i),
         });
       }
+
       setSignalData(visData);
 
-      if (peakIndices.length >= MIN_PEAKS_FOR_BPM) {
-        // Calculate BPM from peak intervals
-        const intervals: number[] = [];
-        for (let i = 1; i < peakIndices.length; i++) {
-          const dt = signal[peakIndices[i]].time - signal[peakIndices[i - 1]].time;
-          if (dt > 0) intervals.push(dt);
+      if (analysis.bpm) {
+        setBpm(analysis.bpm);
+        bpmHistoryRef.current.push(analysis.bpm);
+        if (bpmHistoryRef.current.length > 20) {
+          bpmHistoryRef.current.splice(0, bpmHistoryRef.current.length - 20);
         }
 
-        if (intervals.length >= 2) {
-          // Remove outliers (> 2 std from mean)
-          const meanInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-          const stdInterval = Math.sqrt(intervals.reduce((a, b) => a + (b - meanInterval) ** 2, 0) / intervals.length);
-          const filtered = intervals.filter(i => Math.abs(i - meanInterval) < 2 * stdInterval);
-
-          if (filtered.length >= 2) {
-            const avgInterval = filtered.reduce((a, b) => a + b, 0) / filtered.length;
-            const calculatedBpm = Math.round(60 / avgInterval);
-
-            if (calculatedBpm >= 40 && calculatedBpm <= 200) {
-              setBpm(calculatedBpm);
-              bpmHistoryRef.current.push(calculatedBpm);
-              stableCountRef.current++;
-              setStatus(stableCountRef.current >= 3 ? 'stable' : 'detecting');
-            } else {
-              setStatus('low-signal');
-              stableCountRef.current = 0;
-            }
+        const recent = bpmHistoryRef.current.slice(-4);
+        if (recent.length >= 3) {
+          const spread = Math.max(...recent) - Math.min(...recent);
+          if (spread <= STABLE_BPM_SPREAD && analysis.confidence >= 0.45) {
+            stableCountRef.current = Math.min(stableCountRef.current + 1, MIN_STABLE_READINGS + 2);
           } else {
-            setStatus('low-signal');
+            stableCountRef.current = Math.max(0, stableCountRef.current - 1);
           }
         }
-      } else {
-        if (elapsed > 3) setStatus('detecting');
+
+        setStatus(stableCountRef.current >= MIN_STABLE_READINGS ? 'stable' : 'detecting');
+      } else if (elapsed >= 4) {
+        setStatus('low-signal');
+        stableCountRef.current = 0;
       }
     }
 
     animFrameRef.current = requestAnimationFrame(processFrame);
   }, []);
-
-  const finalizeMeasurement = useCallback(() => {
-    cancelAnimationFrame(animFrameRef.current);
-
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    // Calculate final BPM from history
-    const history = bpmHistoryRef.current;
-    let result: number | null = null;
-
-    if (history.length >= 2) {
-      // Remove outliers and average
-      const mean = history.reduce((a, b) => a + b, 0) / history.length;
-      const std = Math.sqrt(history.reduce((a, b) => a + (b - mean) ** 2, 0) / history.length);
-      const valid = history.filter(v => Math.abs(v - mean) < 2 * std);
-      result = valid.length > 0
-        ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length)
-        : Math.round(mean);
-    } else if (history.length === 1) {
-      // Even a single reading is better than nothing
-      result = history[0];
-    } else if (bpm) {
-      // Fallback: use whatever the last live BPM was
-      result = bpm;
-    }
-
-    if (result && result >= 40 && result <= 200) {
-      setFinalBpm(result);
-      setBpm(result);
-
-      setReadings(prev => {
-        const updated = [...prev, { bpm: result!, timestamp: new Date() }];
-        return updated.slice(-5);
-      });
-      setMeasurementComplete(true);
-    } else {
-      // No valid result — let user know
-      setFinalBpm(null);
-      setMeasurementComplete(true);
-    }
-
-    setProgress(100);
-    setStatus('idle');
-    setFlashEnabled(false);
-  }, [bpm]);
 
   const startDetection = useCallback(async () => {
     setStatus('starting');
@@ -307,6 +249,10 @@ export function useHeartRateDetection() {
     rawSignalRef.current = [];
     stableCountRef.current = 0;
     bpmHistoryRef.current = [];
+    noFingerFramesRef.current = 0;
+    wasNoFingerRef.current = false;
+
+    stopMediaStream();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -322,11 +268,10 @@ export function useHeartRateDetection() {
       const track = stream.getVideoTracks()[0];
       trackRef.current = track;
 
-      // Try enabling torch
       try {
-        const capabilities = track.getCapabilities() as any;
+        const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
         if (capabilities?.torch) {
-          await track.applyConstraints({ advanced: [{ torch: true } as any] });
+          await track.applyConstraints({ advanced: [{ torch: true }] as MediaTrackConstraintSet[] });
           setFlashEnabled(true);
           setFlashSupported(true);
         } else {
@@ -348,7 +293,6 @@ export function useHeartRateDetection() {
       setStatus('detecting');
       animFrameRef.current = requestAnimationFrame(processFrame);
 
-      // Progress timer
       const startTime = Date.now();
       progressIntervalRef.current = setInterval(() => {
         const elapsed = Date.now() - startTime;
@@ -356,7 +300,6 @@ export function useHeartRateDetection() {
         setProgress(Math.round(pct));
       }, 500);
 
-      // Auto-stop after duration
       autoStopTimerRef.current = setTimeout(() => {
         finalizeMeasurement();
       }, AUTO_STOP_DURATION);
@@ -364,14 +307,11 @@ export function useHeartRateDetection() {
     } catch (err) {
       console.error('Camera access failed:', err);
       setStatus('error');
+      stopMediaStream();
     }
-  }, [processFrame, finalizeMeasurement]);
+  }, [processFrame, finalizeMeasurement, stopMediaStream]);
 
   const stopDetection = useCallback(() => {
-    if (autoStopTimerRef.current) {
-      clearTimeout(autoStopTimerRef.current);
-      autoStopTimerRef.current = null;
-    }
     finalizeMeasurement();
   }, [finalizeMeasurement]);
 
@@ -381,17 +321,17 @@ export function useHeartRateDetection() {
     setProgress(0);
     setBpm(null);
     setSignalData([]);
+    setStatus('idle');
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       cancelAnimationFrame(animFrameRef.current);
-      streamRef.current?.getTracks().forEach(t => t.stop());
+      stopMediaStream();
       if (autoStopTimerRef.current) clearTimeout(autoStopTimerRef.current);
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     };
-  }, []);
+  }, [stopMediaStream]);
 
   const averageBpm = readings.length > 0
     ? Math.round(readings.reduce((sum, r) => sum + r.bpm, 0) / readings.length)
