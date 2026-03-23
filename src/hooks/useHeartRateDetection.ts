@@ -56,6 +56,11 @@ export function useHeartRateDetection() {
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const noFingerFramesRef = useRef(0);
   const wasNoFingerRef = useRef(false);
+  const liveBpmRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    liveBpmRef.current = bpm;
+  }, [bpm]);
 
   const stopMediaStream = useCallback(() => {
     if (streamRef.current) {
@@ -87,7 +92,7 @@ export function useHeartRateDetection() {
     const elapsedSeconds = (performance.now() - startTimeRef.current) / 1000;
     const result = calculateFinalBpm(
       bpmHistoryRef.current,
-      bpm,
+      liveBpmRef.current,
       rawSignalRef.current,
       fpsRef.current,
     );
@@ -104,7 +109,7 @@ export function useHeartRateDetection() {
     setProgress(100);
     setStatus('idle');
     setFlashEnabled(false);
-  }, [bpm, stopMediaStream]);
+  }, [stopMediaStream]);
 
   const processFrame = useCallback(() => {
     const video = videoRef.current;
