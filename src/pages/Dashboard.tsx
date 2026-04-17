@@ -3,9 +3,11 @@ import {
   Heart, Footprints, Droplets, Flame, Activity, 
   TrendingUp, Scale, Sparkles 
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { useUser } from '@/contexts/UserContext';
+import { calculateBiologicalAge } from '@/lib/biologicalAge';
 
 export default function Dashboard() {
   const { 
