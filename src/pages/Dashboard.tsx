@@ -3,9 +3,11 @@ import {
   Heart, Footprints, Droplets, Flame, Activity, 
   TrendingUp, Scale, Sparkles 
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { StatCard } from '@/components/StatCard';
 import { useUser } from '@/contexts/UserContext';
+import { calculateBiologicalAge } from '@/lib/biologicalAge';
 
 export default function Dashboard() {
   const { 
@@ -19,6 +21,8 @@ export default function Dashboard() {
   const bmi = calculateBMI();
   const dailyCalories = calculateDailyCalories() || 2000;
   const dailyWater = calculateDailyWater() || 2500;
+  const bioAge = calculateBiologicalAge(userProfile, healthData, dailyWater);
+  const bioReady = 'biologicalAge' in bioAge;
   
   const remainingCalories = dailyCalories - healthData.caloriesConsumed;
   const caloriesBurned = Math.round(healthData.stepsToday * 0.04);
@@ -99,6 +103,50 @@ export default function Dashboard() {
           </div>
           <p className="text-sm text-muted-foreground mt-2">{bmi?.insight}</p>
         </motion.div>
+
+        {/* Biological Age */}
+        <Link to="/biological-age">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-card rounded-2xl p-5 border border-border/50 mb-4 hover:border-primary/40 transition-colors"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <span className="font-medium text-foreground">Biological Age</span>
+              </div>
+              {bioReady && (
+                <span
+                  className={`text-xs font-semibold px-2 py-1 rounded-md ${
+                    bioAge.status === 'better'
+                      ? 'bg-success/10 text-success'
+                      : bioAge.status === 'worse'
+                      ? 'bg-destructive/10 text-destructive'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {bioAge.statusLabel}
+                </span>
+              )}
+            </div>
+            {bioReady ? (
+              <div className="flex items-end gap-3">
+                <span className="text-4xl font-bold text-foreground">{bioAge.biologicalAge}</span>
+                <span className="text-sm text-muted-foreground mb-1">
+                  vs actual age {bioAge.actualAge}
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Complete your profile and health data to see your biological age.
+              </p>
+            )}
+          </motion.div>
+        </Link>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-4 mb-4">

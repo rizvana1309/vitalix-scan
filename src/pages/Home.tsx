@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Camera, Heart, Footprints, Droplets, LayoutDashboard, MessageCircle } from 'lucide-react';
+import { Camera, Heart, Footprints, Droplets, LayoutDashboard, MessageCircle, Sparkles } from 'lucide-react';
 import { FeatureCard } from '@/components/FeatureCard';
 import { useUser } from '@/contexts/UserContext';
 
@@ -35,6 +35,14 @@ const features = [
     to: '/water',
     iconBgColor: 'bg-water/10',
     iconColor: 'text-water',
+  },
+  {
+    icon: Sparkles,
+    title: 'Biological Age',
+    subtitle: 'Estimate your body age from lifestyle',
+    to: '/biological-age',
+    iconBgColor: 'bg-primary/10',
+    iconColor: 'text-primary',
   },
   {
     icon: MessageCircle,
