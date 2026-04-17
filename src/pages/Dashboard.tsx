@@ -21,6 +21,8 @@ export default function Dashboard() {
   const bmi = calculateBMI();
   const dailyCalories = calculateDailyCalories() || 2000;
   const dailyWater = calculateDailyWater() || 2500;
+  const bioAge = calculateBiologicalAge(userProfile, healthData, dailyWater);
+  const bioReady = 'biologicalAge' in bioAge;
   
   const remainingCalories = dailyCalories - healthData.caloriesConsumed;
   const caloriesBurned = Math.round(healthData.stepsToday * 0.04);
