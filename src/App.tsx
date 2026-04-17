@@ -17,6 +17,7 @@ import Steps from "./pages/Steps";
 import Water from "./pages/Water";
 import Dashboard from "./pages/Dashboard";
 import HealthChat from "./pages/HealthChat";
+import BiologicalAge from "./pages/BiologicalAge";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
