@@ -37,6 +37,14 @@ const features = [
     iconColor: 'text-water',
   },
   {
+    icon: Sparkles,
+    title: 'Biological Age',
+    subtitle: 'Estimate your body age from lifestyle',
+    to: '/biological-age',
+    iconBgColor: 'bg-primary/10',
+    iconColor: 'text-primary',
+  },
+  {
     icon: MessageCircle,
     title: 'Health Chatbot',
     subtitle: 'Ask AI about your health',
