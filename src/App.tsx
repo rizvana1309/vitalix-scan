@@ -50,6 +50,7 @@ function AppRoutes() {
       <Route path="/water" element={<ProtectedRoute><Water /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/health-chat" element={<ProtectedRoute><HealthChat /></ProtectedRoute>} />
+      <Route path="/biological-age" element={<ProtectedRoute><BiologicalAge /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
